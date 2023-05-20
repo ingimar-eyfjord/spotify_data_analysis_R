@@ -1,7 +1,19 @@
+# The melodies of music
+
+> A data-driven review of Spotify's audio features and their use case for genre classification and recommender systems.
+
+This repo is the code for an exam paper I wrote during my Master's Degree in Information Science. The paper is available on Medium [here]()
+
+## Code documentation
+
+### Importing libraries
+
+```r
 library(tidyverse)
 library(ggplot2)
 library(corrplot)
 library(dplyr)
+library(ggplot2)
 library(factoextra)
 library(cluster)
 library(hrbrthemes)
@@ -33,11 +45,20 @@ library(kableExtra)
 library(dbscan)
 library(FNN)
 library(splitstackshape)
+library(wordcloud)
+```
 
 ## Theming
+
+The following code is used to theme the plots in the paper. Where the goal was to replicate Spotify's color scheme and font.
+
+```r
+# Adding Montserrat font to the plot (similar to Spotify's font)
 font_add_google("Montserrat")
 showtext_auto()
+# Applying fonts to the theme ipsum
 theme_set(theme_ipsum(base_family = "Montserrat"))
+# Applying the custom theme
 theme_update(
     # Remove title for both x and y axes
     axis.title = element_blank(),
@@ -82,11 +103,13 @@ theme_update(
         hjust = 0,
         margin = ggplot2::margin(t = 10) # Large margin on the top of the caption.
     ),
-    # Remove legend
+    # Remove legend if you don't want any.
     # legend.position = "none"
 )
+# A function to create a custom color gradient
 custom_color_gradient <- colorRampPalette(colors = c("darkorchid4", "white", "#1DB954"))
 
+# A function to retrieve predefined colors
 kp_cols <- function(...) {
     kp_colors <- c(
         purple = "#490B32",
@@ -109,32 +132,60 @@ kp_cols <- function(...) {
 
     kp_colors[cols]
 }
+```
 
-## Theming done
+## Using Spotify's API
 
-## Log user in
+The following code is used to retrieve data from Spotify's API. The code uses the `dotenv` package to load the environment variables from the `.env` file. The `.env` file is not included in this repo for security reasons. The `.env` file should look like this:
 
-# # Load the .env file
+```bash
+SPOTIFY_CLIENT_ID=your_client_id
+SPOTIFY_CLIENT_SECRET=your_client_secret
+SPOTIFY_REDIRECT_URI=your_redirect_uri
+SPOTIFY_USER=your_user_id
+```
+
+These variables can be retrieved from the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/).
+
+> Keep in mind, you need to create an account and a project in the Spotify Developer Dashboard to get the credentials (which is free).
+
+**Load the .env file**
+
+```r
 load_dot_env(".env")
+```
 
-# # Access the environment variables
+**Access the environment variablesI**
+
+This accesses the environment variables from the `.env` file and sets them as variables in the R environment.
+
+```r
 client_id <- Sys.getenv("SPOTIFY_CLIENT_ID")
 client_secret <- Sys.getenv("SPOTIFY_CLIENT_SECRET")
 redirect_uri <- Sys.getenv("SPOTIFY_REDIRECT_URI")
 user_id <- Sys.getenv("SPOTIFY_USER")
+```
 
+**Authenticating in and retrieve authentication token**
+
+The following code uses oauth to open a popup to the browser to authenticate a user and retrieve a Bearer token from your Spotify app. The authentication token is used to authenticate the user for subsequent API calls.
+
+```r
+# Spotify API endpoint
 spotify_endpoint <- oauth_endpoint(
-    authorize = "https://accounts.spotify.com/authorize",
-    access = "https://accounts.spotify.com/api/token"
+    authorize = "<https://accounts.spotify.com/authorize>",
+    access = "<https://accounts.spotify.com/api/token>"
 )
-
+# Client ID and secret are based on your Spotify app
 spotify_app <- oauth_app(
     "spotify",
     key = client_id,
     secret = client_secret,
-    redirect_uri = "http://localhost:1410/"
+    redirect_uri = "<http://localhost:1410/>"
 )
-
+# Scopes are based on the permissions you want to give your app
+# I did not use all of these scopes, but I left some in here as an example
+# You need to set the scopes in the Spotify Developer Dashboard as well
 spotify_scopes <- c(
     "user-read-email",
     "user-read-private",
@@ -143,7 +194,7 @@ spotify_scopes <- c(
     "playlist-modify-private",
     "user-top-read"
 )
-
+# This opens a popup in the browser to authenticate the user
 token <- oauth2.0_token(
     endpoint = spotify_endpoint,
     app = spotify_app,
@@ -152,27 +203,47 @@ token <- oauth2.0_token(
     cache = FALSE,
 )
 
-profile_url <- "https://api.spotify.com/v1/me"
+# This converts the token$credentials to raw
 credentials_raw <- token$credentials
+# This converts the credentials to a character
 credentials_char <- rawToChar(credentials_raw)
+# This converts the credentials to a list
 credentials_list <- fromJSON(credentials_char)
 
+# This is the access token that is used for subsequent API calls
 access_token <- credentials_list$access_token
+# This is the authorization header that is used for subsequent API calls
 auth_header <- paste("Bearer", access_token)
+# This is the API call to retrieve the user's profile
 
+```
+
+**Get the user's profile**
+
+This retrieves the user's profile from the API. The user's profile is used to retrieve the user's display name, followers, and user id ect.
+
+```r
+# This is the API call to retrieve the user's profile
+profile_url <- "<https://api.spotify.com/v1/me>"
 response <- GET(profile_url, add_headers(Authorization = auth_header))
-# Parse the JSON response and convert it to a data frame
 
+# Parse the JSON response and convert it to a data frame
 profile_list <- fromJSON(rawToChar(response$content))
 profile_df <- list(
     display_name = profile_list$display_name,
     followers_total = profile_list$followers$total,
     id = profile_list$id
 )
+```
 
+**Get the user's top items**
+
+This retrieves the user's top 50 items from the API. The function uses the `get_top_items` function to retrieve the user's top 50 artists and tracks. The function can be modified to retrieve the user's top 50 albums as well. The function takes the access token, type, time range, limit, and offset as arguments. The type can be either `artists` or `tracks`. The time range can be either `short_term`, `medium_term`, or `long_term`. The limit can be any number between 1 and 50. The offset can be any number between 0 and 49. The function returns a list of the user's top 50 items.
+
+```r
 
 get_top_items <- function(access_token, type, time_range = "medium_term", limit = 100, offset = 0) {
-    base_url <- "https://api.spotify.com/v1/me/top"
+    base_url <- "<https://api.spotify.com/v1/me/top>"
     url <- paste0(base_url, "/", type)
 
     auth_header <- paste("Bearer", access_token)
@@ -195,17 +266,38 @@ get_top_items <- function(access_token, type, time_range = "medium_term", limit 
     top_items <- fromJSON(rawToChar(response$content))
     return(top_items)
 }
+```
 
-top_tracks <- get_top_items(access_token, "tracks", time_range = "medium_term", limit = 100, offset = 0)
+**Get the user's top artists**
+
+In the report I did not need to use my top artists so it's commented out, but the following code can be used to retrieve the user's top artists.
+
+```r
+top_artists <- get_top_items(access_token, "artists", time_range = "medium_term", limit = 10, offset = 0)
+```
+
+**Get the user's top songs**
+
+The following function retrieves your top 50 songs.
+
+```r
+top_tracks <- get_top_items(access_token, "tracks", time_range = "medium_term", limit = 50, offset = 0)
 View(top_tracks$items)
 
 items_list <- top_tracks$items
 
+# Transform the list into a data frame
 tracks_df <- items_list %>%
     select(-c(album, available_markets, disc_number, explicit, external_ids, external_urls, href, is_local, preview_url, track_number, type, uri))
+```
 
+**Get the audio features for the user's top songs**
+
+The following function retrieves the audio features for a song. The function takes the access token and track id as arguments. The function returns a list of the audio features for the track. Calling it with `sapply` returns a list of lists. Calling `t` on the list of lists returns a data frame, finally merging the tracks and audio features data frames returns a data frame with the user's top songs and their audio features.
+
+```r
 get_audio_features <- function(access_token, track_id) {
-    base_url <- "https://api.spotify.com/v1/audio-features"
+    base_url <- "<https://api.spotify.com/v1/audio-features>"
     url <- paste0(base_url, "/", track_id)
 
     auth_header <- paste("Bearer", access_token)
@@ -222,22 +314,32 @@ get_audio_features <- function(access_token, track_id) {
     return(audio_features)
 }
 
+# For each track id, get the audio features
 audio_features_list <- sapply(tracks_df$id, function(track_id) get_audio_features(access_token, track_id))
+# Transform the list into a data frame
 audio_features_df <- t(audio_features_list)
 
-# delete first row of audio_features_df
-
+# Merge the tracks and audio features data frames
 merged_df <- merge(tracks_df, audio_features_df, by = "id")
+```
 
+**Data preporcessing**
+
+To prepare the data to fit with data from the `tidytuesdayR` package, the following code renames the columns and removes the columns that are not needed. The code also converts the data types of the columns to numeric.
+
+```r
+# Rename the columns
 merged_df <- merged_df %>% rename(track_popularity = popularity)
 merged_df <- merged_df %>% rename(duration_ms = duration_ms.y)
 merged_df <- merged_df %>% rename(track_id = id)
 merged_df <- merged_df %>% rename(track_name = name)
 merged_df <- merged_df %>% rename(track_artist = artists)
 
+# Remove the columns that are not needed
 column_index <- which(names(merged_df) == "duration_ms.x")
 merged_df <- merged_df[, -column_index]
 
+# Convert the data types of the columns to numeric
 merged_df$duration_ms <- as.numeric(merged_df$duration_ms)
 merged_df$speechiness <- as.numeric(merged_df$speechiness)
 merged_df$acousticness <- as.numeric(merged_df$acousticness)
@@ -250,13 +352,19 @@ merged_df$danceability <- as.numeric(merged_df$danceability)
 merged_df$key <- as.numeric(merged_df$key)
 merged_df$loudness <- as.numeric(merged_df$loudness)
 merged_df$mode <- as.numeric(merged_df$mode)
-# merged_df <- merged_df %>% rename(duration_ms = duration_ms.y)
-users_top_50 <- merged_df
-caption <- "Mock, T. (2022). Tidy tuesday: A weekly data project aimed at the r ecosystem. <br> github.com/rfordatascience/tidytuesday"
 
+# rename the data frame to users top 50
+users_top_50 <- merged_df
+```
+
+**Get the data from the `tidytuesdayR` package**
+
+The following code gets the data from the `tidytuesdayR` package. The data is from the `spotify_songs` data set. The data is from the `tidytuesdayR` package is from 2020-01-21.
+
+```r
 get_tidytuesday_songs <- function() {
     # Get the Data
-    spotify_songs <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv")
+    spotify_songs <- readr::read_csv("<https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv>")
 
     # Or read in with tidytuesdayR package (https://github.com/thebioengineer/tidytuesdayR)
     # PLEASE NOTE TO USE 2020 DATA YOU NEED TO UPDATE tidytuesdayR from GitHub
@@ -273,99 +381,112 @@ get_tidytuesday_songs <- function() {
     return(tuesdata$spotify_songs)
 }
 spotify_songs <- get_tidytuesday_songs()
-# Select highest and lowest date
-dates <- spotify_songs %>%
-    group_by(playlist_genre) %>%
-    summarise(min_date = min(track_album_release_date), max_date = max(track_album_release_date)) %>%
-    arrange(desc(max_date))
+```
+
+**Define feature names**
+
+This defines the feature names for the audio features. This is used later in multiple places.
+
+```r
 feature_names <- c(
     "danceability", "energy", "key", "loudness", "mode", "speechiness",
     "acousticness", "instrumentalness", "liveness", "valence", "tempo",
     "duration_ms", "duration_sec"
 )
+```
+
+### Exploratory Data Analysis
+
+The following function is defined to perform the exploratory data analysis, it accepts the song datasets as paraemters and therefore we can call it twice, once for the TidyTuesday dataset and once for the user's top songs dataset.
+
+```r
+# Function: eda_function
+# Description: Performs exploratory data analysis (EDA) on the Spotify songs dataset.
+# Parameters:
+#   - spotify_songs: Data frame containing the Spotify songs dataset.
+# Returns: None
+
 eda_function <- function(spotify_songs) {
-    # create a list of the names to use for the audio features
-
-    # If playlist_genre exists, means it's in Dataset A, Dataset B does not have a playlists_genre column
-    # Create a new column called playlist_genre and assign it "-" values for all rows if it doesn't exist
-    if (!"playlist_genre" %in% names(spotify_songs)) {
-        spotify_songs <- spotify_songs %>%
-            mutate(playlist_genre = "-")
-    }
-
-    with_outliers <- spotify_songs %>%
-        ggplot(aes(y = duration_ms)) +
-        geom_boxplot(color = kp_cols("red"), coef = 4) +
-        coord_flip() +
-        labs(title = "Duration")
-
-    duration_outliers <- boxplot(spotify_songs$duration_ms,
-        plot = FALSE, range = 4
-    )$out
-
-    spotify_songs_no_outliers <- spotify_songs %>%
-        filter(!duration_ms %in% duration_outliers)
-
-    without_outliers <- spotify_songs_no_outliers %>%
-        ggplot(aes(y = duration_ms)) +
-        geom_boxplot(color = kp_cols("red"), coef = 4) +
-        coord_flip() +
-        labs(title = "Duration, outliers removed")
-
-    gridExtra::grid.arrange(with_outliers, without_outliers, ncol = 1)
-
-    # amount of songs
-    nrow(spotify_songs)
-
-    # genres
-    spotify_songs %>%
-        group_by(playlist_genre) %>%
-        summarise(n = n()) %>%
-        arrange(desc(n))
-    View(spotify_songs)
-
+  
+  # Check if playlist_genre column exists in the dataset (Dataset A)
+  # If not, add a new column called playlist_genre with "-" values for all rows (Dataset B)
+  if (!"playlist_genre" %in% names(spotify_songs)) {
     spotify_songs <- spotify_songs %>%
-        mutate(
-            duration_sec = duration_ms / 1000,
-            duration_min = duration_sec / 60
-        )
+      mutate(playlist_genre = "-")
+  }
+  
+  # Plot the distribution of duration with outliers
+  with_outliers <- spotify_songs %>%
+    ggplot(aes(y = duration_ms)) +
+    geom_boxplot(color = kp_cols("red"), coef = 4) +
+    coord_flip() +
+    labs(title = "Duration")
+  
+  # Find and remove the outliers
+  duration_outliers <- boxplot(spotify_songs$duration_ms, plot = FALSE, range = 4)$out
+  spotify_songs_no_outliers <- spotify_songs %>%
+    filter(!duration_ms %in% duration_outliers)
+  
+  # Plot the distribution of duration without outliers
+  without_outliers <- spotify_songs_no_outliers %>%
+    ggplot(aes(y = duration_ms)) +
+    geom_boxplot(color = kp_cols("red"), coef = 4) +
+    coord_flip() +
+    labs(title = "Duration, outliers removed")
+  
+  # Plot the two graphs side by side
+  gridExtra::grid.arrange(with_outliers, without_outliers, ncol = 1)
+  
+  # Print the number of songs in the dataset
+  nrow(spotify_songs)
+  
+  # View the number of songs per genre
+  spotify_songs %>%
+    group_by(playlist_genre) %>%
+    summarise(n = n()) %>%
+    arrange(desc(n))
+  
+  # Define duration_sec and duration_min columns
+  spotify_songs <- spotify_songs %>%
+    mutate(
+      duration_sec = duration_ms / 1000,
+      duration_min = duration_sec / 60
+    )
+  
+  # Plot the density of audio features
+  audio_feature_density <- spotify_songs %>%
+    select(c("playlist_genre", feature_names)) %>%
+    pivot_longer(cols = feature_names) %>%
+    filter(name != "duration_ms") %>%
+    ggplot(aes(x = value)) +
+    geom_density(aes(color = playlist_genre), alpha = 0.5) +
+    facet_wrap(~name, ncol = 3, scales = "free") +
+    labs(title = "", x = "", y = "density") +
+    theme(axis.text.y = element_blank())
+  
+  # Print the audio feature density plot
+  print(audio_feature_density)
+  
+  # Check the structure of the data
+  str(spotify_songs)
+  
+  # Get data statistics
+  
+  # Summary statistics for numeric variables
+  summary_list <- summary(spotify_songs[, c("track_popularity", "danceability", "energy", "key", "loudness", "speechiness", "acousticness", "instrumentalness", "liveness", "valence", "tempo", "duration_ms")])
+  View(summary_list)
+  
+  # Frequencies for categorical variables
+  frequency_of_playlist_genre <- table(spotify_songs$playlist_genre)
+  View(frequency_of_playlist_genre)
+  
 
-
-    audio_feature_density <- spotify_songs %>%
-        select(c("playlist_genre", feature_names)) %>%
-        pivot_longer(cols = feature_names) %>%
-        filter(name != "duration_ms") %>% # remove the duration_ms column
-        ggplot(aes(x = value)) +
-        geom_density(aes(color = playlist_genre), alpha = 0.5) +
-        facet_wrap(~name, ncol = 3, scales = "free") +
-        labs(
-            title = "",
-            x = "", y = "density"
-        ) +
-        theme(axis.text.y = element_blank())
-
-    # Modify scales for duration_ms feature
-    if ("duration_ms" %in% feature_names) {
-        audio_feature_density <- audio_feature_density + scale_x_continuous(labels = comma_format())
-    }
-
-    print(audio_feature_density)
-
-    summary(spotify_songs)
-    ## Check the structure of the data
-    str(spotify_songs)
-
-    # Get data statistics
-    # Summary statistics for numeric variables
-    summary_list <- summary(spotify_songs[, c("track_popularity", "danceability", "energy", "key", "loudness", "speechiness", "acousticness", "instrumentalness", "liveness", "valence", "tempo", "duration_ms")])
-    View(summary_list)
-    # Frequencies for categorical variables
-    frequency_of_playlist_genre <- table(spotify_songs$playlist_genre)
-    View(frequency_of_playlist_genre)
     frequency_of_playlist_subgenre <- table(spotify_songs$playlist_subgenre)
     View(frequency_of_playlist_subgenre)
 
+    # Missing values
     missing_values <- sum(is.na(spotify_songs))
+
 
     distribution_of_numerics <- summary(spotify_songs[, c("track_popularity", "danceability", "energy", "key", "mode", "speechiness", "acousticness", "instrumentalness", "liveness", "valence", "tempo", "duration_ms")])
 
@@ -377,7 +498,7 @@ eda_function <- function(spotify_songs) {
             color = "darkorchid4", linetype = "dashed", size = 1
         ) +
         labs(x = "", y = "")
-
+   
     print(histogram)
 
     # Visualize relationships between continuous variables: Use scatter plots or pairs plots to visualize relationships between continuous variables. For example, to create a scatter plot of energy vs. loudness:
@@ -397,8 +518,8 @@ eda_function <- function(spotify_songs) {
     spotify_songs_continuous <- spotify_songs[, c("danceability", "energy", "key", "speechiness", "acousticness", "instrumentalness", "liveness", "valence", "tempo", "loudness")]
     correlation_matrix <- cor(spotify_songs_continuous)
     corrolation_plot <- corrplot(correlation_matrix, method = "circle", col = custom_color_gradient(100))
-    # Create the ggplot2-based correlation plot
 
+    # Create the ggplot2-based correlation plot
     ggcorrplot_object <- ggcorrplot(
         correlation_matrix,
         hc.order = TRUE,
@@ -429,6 +550,7 @@ eda_function <- function(spotify_songs) {
 
     print(ggcorrplot_object)
 
+    # Create a different looking correlation plot
     corr_matrix <- cor(spotify_songs[, c("danceability", "energy", "key", "mode", "speechiness", "acousticness", "instrumentalness", "liveness", "valence", "tempo", "duration_ms", "loudness")])
     print(corr_matrix)
 
@@ -443,89 +565,141 @@ eda_function <- function(spotify_songs) {
         tl.cex = 1.2,
         tl.col = "darkorchid4",
         tl.srt = 45,
+        # cl.pos = "n",
         cl.ratio = 0.2,
         insig = "blank",
         diag = FALSE,
         col = custom_color_gradient(100)
     )
-
+    # Print the correlation plot
     print(correlation_plot_2)
 }
+```
+
+**Call the function**
+
+```r
 eda_function(spotify_songs)
 eda_function(users_top_50)
+```
+
+## Classification
+
+The following function will be used to train a decision tree model to predict the playlist genre of a song.
+
+If starts by
+
+```r
+# Function: classification_function_decision_tree
+# Description: Performs classification using a decision tree model on Spotify songs dataset.
+# Parameters:
+#   - spotify_songs: Data frame containing the Spotify songs dataset.
+# Returns:
+#   - results: List of classification results including accuracy and evaluation metrics.
 
 classification_function_decision_tree <- function(spotify_songs) {
-    feature_names <- c(
-        "danceability", "energy", "key", "mode", "speechiness",
-        "acousticness", "instrumentalness", "liveness", "valence", "tempo",
-        "duration_ms"
-    )
-
-    playlist_songs_scaled <- spotify_songs %>%
-        mutate_if(is.numeric, scale)
-
-    set.seed(19234)
-
-    # Use createDataPartition for stratified sampling
-    train_index <- createDataPartition(y = spotify_songs$playlist_genre, p = 0.8, list = FALSE)
-
-    train_set <- playlist_songs_scaled[train_index, c("playlist_genre", feature_names)]
-    test_set <- playlist_songs_scaled[-train_index, c("playlist_genre", feature_names)]
-
-    set.seed(1111)
-    model_dt <- rpart(playlist_genre ~ ., data = train_set)
-
-    rpart.plot(model_dt,
-        type = 5,
-        extra = 104,
-        box.palette = list(
-            orange = "#FB8B24",
-            green = "#1DB954",
-            skyblue = "#1DB9E2",
-            lightpink = "#F8BBD0",
-            lightgray = "#E0E0E0",
-            lightpurple = "#D1C4E9"
-        ),
-        leaf.round = 0,
-        fallen.leaves = FALSE,
-        branch = 1,
-        under = TRUE,
-        family = "Montserrat",
-        tweak = 1.2
-    )
-    predict_dt <- predict(object = model_dt, newdata = test_set, type = "class")
-
-    compare_dt <- data.frame(
-        true_value = test_set$playlist_genre,
-        predicted_value = predict_dt,
-        stringsAsFactors = FALSE
-    )
-
-    cm_dt <- table(compare_dt$true_value, compare_dt$predicted_value)
-
-    accuracy_dt <- sum(diag(cm_dt)) / sum(cm_dt)
-
-    precision_dt <- diag(cm_dt) / colSums(cm_dt)
-    recall_dt <- diag(cm_dt) / rowSums(cm_dt)
-    f1_score_dt <- 2 * ((precision_dt * recall_dt) / (precision_dt + recall_dt))
-
-    metrics_dt <- data.frame(precision = precision_dt, recall = recall_dt, f1_score = f1_score_dt)
-    row.names(metrics_dt) <- levels(as.factor(test_set$playlist_genre))
-
-    results <- list(accuracy = accuracy_dt, metrics = metrics_dt)
-    return(results)
+  
+  # Define the feature names used for classification
+  feature_names <- c(
+    "danceability", "energy", "key", "mode", "speechiness",
+    "acousticness", "instrumentalness", "liveness", "valence", "tempo",
+    "duration_ms"
+  )
+  
+  # Scale the numeric features in the dataset
+  playlist_songs_scaled <- spotify_songs %>%
+    mutate_if(is.numeric, scale)
+  
+  # Split the dataset into training and testing sets
+  set.seed(19234)
+  train_index <- createDataPartition(y = spotify_songs$playlist_genre, p = 0.8, list = FALSE)
+  train_set <- playlist_songs_scaled[train_index, c("playlist_genre", feature_names)]
+  test_set <- playlist_songs_scaled[-train_index, c("playlist_genre", feature_names)]
+  
+  # Train a decision tree model using the training set
+  set.seed(1111)
+  model_dt <- rpart(playlist_genre ~ ., data = train_set)
+  
+  # Plot the decision tree model
+  rpart.plot(model_dt,
+    type = 5,
+    extra = 104,
+    box.palette = list(
+      orange = "#FB8B24",
+      green = "#1DB954",
+      skyblue = "#1DB9E2",
+      lightpink = "#F8BBD0",
+      lightgray = "#E0E0E0",
+      lightpurple = "#D1C4E9"
+    ),
+    leaf.round = 0,
+    fallen.leaves = FALSE,
+    branch = 1,
+    under = TRUE,
+    family = "Montserrat",
+    tweak = 1.2
+  )
+  
+  # Perform predictions on the testing set using the trained model
+  predict_dt <- predict(object = model_dt, newdata = test_set, type = "class")
+  
+  # Compare the true and predicted values
+  compare_dt <- data.frame(
+    true_value = test_set$playlist_genre,
+    predicted_value = predict_dt,
+    stringsAsFactors = FALSE
+  )
+  
+  # Create a confusion matrix
+  cm_dt <- table(compare_dt$true_value, compare_dt$predicted_value)
+  
+  # Calculate accuracy
+  accuracy_dt <- sum(diag(cm_dt)) / sum(cm_dt)
+  
+  # Calculate precision, recall, and F1-score for each class
+  precision_dt <- diag(cm_dt) / colSums(cm_dt)
+  recall_dt <- diag(cm_dt) / rowSums(cm_dt)
+  f1_score_dt <- 2 * ((precision_dt * recall_dt) / (precision_dt + recall_dt))
+  
+  # Create a data frame to store evaluation metrics
+  metrics_dt <- data.frame(precision = precision_dt, recall = recall_dt, f1_score = f1_score_dt)
+  row.names(metrics_dt) <- levels(as.factor(test_set$playlist_genre))
+  
+  # Store the results in a list
+  results <- list(accuracy = accuracy_dt, metrics = metrics_dt)
+  
+  # Return the results
+  return(results)
 }
+```
 
+**Call the function**
+
+Now call the function to train a decision tree model on the Spotify songs dataset. The function will return the accuracy and evaluation metrics.
+
+```r
+# Train a decision tree model on the Spotify songs dataset
 results_dt <- classification_function_decision_tree(spotify_songs)
+# Print the results
 print(paste("Decision Tree Accuracy:", results_dt$accuracy))
 print("Metrics:")
 print(results_dt$metrics)
+```
 
+## Clustering
 
-spotify_songs_numeric <- spotify_songs[sapply(spotify_songs, is.numeric)]
+The following function will be used to perform clustering on the Spotify songs dataset. It will use the k-means algorithm to cluster the songs into different groups based on their features. And is called in the reccomend function.
+
+```r
+# Function: clustering_function
+# Description: Performs clustering analysis on the Spotify songs dataset using k-means algorithm.
+# Parameters:
+#   - spotify_songs: Data frame containing the Spotify songs dataset.
+#   - feature_names: Vector of feature names to be used for clustering.
+# Returns:
+#   - results: List of clustering results including optimal number of clusters, scaled data, cluster assignments, optimal features, and feature names.
 
 clustering_function <- function(spotify_songs, feature_names) {
-
 
     # Subset the data to keep only the features of interest
     spotify_cluster <- spotify_songs[, feature_names]
@@ -588,14 +762,17 @@ clustering_function <- function(spotify_songs, feature_names) {
     set.seed(123)
     kmeans_model <- kmeans(optimal_features_scaled, centers = optimal_k, nstart = 25, iter.max = 50)
 
+    # Print the cluster assignments
     print(kmeans_model)
 
-
+    # Define the first two principal components
     PC1 <- pca_results$x[, 1]
     PC2 <- pca_results$x[, 2]
 
+    # Create a data frame with the first two principal components and cluster assignments
     pca_data <- optimal_features_scaled %>% data.frame(PC1 = PC1, PC2 = PC2, cluster = as.factor(kmeans_model$cluster))
 
+    # Create a scatter plot of the first two principal components
     pca_scatter_plot <- ggplot(pca_data, aes(x = PC1, y = PC2, color = cluster)) +
         geom_point(alpha = 0.6) +
         labs(
@@ -606,6 +783,7 @@ clustering_function <- function(spotify_songs, feature_names) {
         ) +
         theme(legend.position = "bottom")
 
+    # Print the scatter plot
     print(pca_scatter_plot)
 
     # Convert the scaled matrix to a data frame
@@ -614,7 +792,7 @@ clustering_function <- function(spotify_songs, feature_names) {
     # Add the cluster assignments to the data frame
     optimal_features_scaled$cluster <- as.factor(kmeans_model$cluster)
 
-
+    # Create a scatter plot with clusters and density
     scatter_density <- ggplot(optimal_features_scaled, aes(x = PC1, y = PC2, color = cluster)) +
         geom_point(alpha = 0.6) +
         stat_density_2d(aes(fill = ..level..), geom = "polygon") +
@@ -625,51 +803,85 @@ clustering_function <- function(spotify_songs, feature_names) {
         ) +
         theme(legend.position = "bottom") 
 
-
+    # Print the scatter plot with clusters and density
     print(scatter_density)
 
   
     # Print silhouette plot without title
     sil <- silhouette(kmeans_model$cluster, dist(optimal_features_scaled))
 
-sil_plot_X <- fviz_silhouette(sil) +
-    ggtitle(NULL) +
-    theme_bw(base_family = "Montserrat") +
-    theme(
+    # Create a silhouette plot
+    sil_plot_X <- fviz_silhouette(sil) +
+        ggtitle(NULL) +
+        theme_bw(base_family = "Montserrat") +
+        theme(
         panel.grid = element_blank(),
         panel.border = element_blank(),
         axis.title.y = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()
-    ) +
-    labs(y = "Cluster") +
-    coord_flip()
-    print(sil_plot_X)
+        ) +
+        labs(y = "Cluster") +
+        coord_flip()
+        print(sil_plot_X)
 
-
-    # Print silhouette plot without title and with custom colors
-
-   
     # Return the optimal number of clusters and the scaled data
     return(list(optimal_k = optimal_k, scaled_data = optimal_features_scaled, cluster = kmeans_model$cluster, optimal_features = optimal_features, feature_names = feature_names))
 }
+```
 
-# Add the new function to perform k-fold cross-validation
+
+
+### Recommend Songs
+
+**Model Evaluation function**
+
+The following function is used later to evaluates the models using cross-validation on the provided dataset and optimal features.
+
+```r
+# Function: evaluate_models
+# Description: Evaluates models using cross-validation on the provided dataset and optimal features.
+# Parameters:
+#   - data: Data frame containing the dataset.
+#   - optimal_features: Vector of optimal feature names to be used for model evaluation.
+# Returns:
+#   - results: Data frame of model evaluation results.
+
 evaluate_models <- function(data, optimal_features) {
-    data$playlist_genre <- as.factor(data$playlist_genre)
-
-    control <- trainControl(method = "cv", number = 10, savePredictions = TRUE)
-
-    model_cv <- train(playlist_genre ~ .,
-        data = data[, c(optimal_features, "playlist_genre")],
-        method = "rf",
-        trControl = control,
-        tuneGrid = data.frame(mtry = floor(sqrt(length(optimal_features))))
-    )
-
-    return(model_cv$results)
+  
+  # Convert the playlist_genre column to a factor
+  data$playlist_genre <- as.factor(data$playlist_genre)
+  
+  # Define the train control with 10-fold cross-validation and save predictions
+  control <- trainControl(method = "cv", number = 10, savePredictions = TRUE)
+  
+  # Train the random forest model using cross-validation
+  model_cv <- train(
+    playlist_genre ~ .,
+    data = data[, c(optimal_features, "playlist_genre")],
+    method = "rf",
+    trControl = control,
+    tuneGrid = data.frame(mtry = floor(sqrt(length(optimal_features))))
+  )
+  
+  # Return the model evaluation results
+  return(model_cv$results)
 }
+```
 
+**Recommend Songs function**
+
+The follwing function recommends songs from dataset A based on the clustering results and dataset B. It performs the following steps:
+
+```r
+# Function: recommend_songs_cluster
+# Description: Recommends songs from dataset A based on the clustering results and dataset B.
+# Parameters:
+#   - data_a: Data frame containing dataset A.
+#   - data_b: Data frame containing dataset B.
+#   - feature_names: Vector of feature names to be used for clustering and recommendation.
+# Returns:
+#   - recommended_songs: List of recommended songs from dataset A.
 recommend_songs_cluster <- function(data_a, data_b, feature_names) {
     set.seed(123)
     data_a <- data_a %>%
@@ -754,15 +966,28 @@ recommend_songs_cluster <- function(data_a, data_b, feature_names) {
     # Return the list of recommended songs
     return(recommended_songs)
 }
+``` 
 
+**Run the recommendation function**
+
+The following code runs the recommendation function and prints the recommended songs.
+
+```r
 feature_names <- c(
     "danceability", "energy", "key",  "speechiness",
     "acousticness", "instrumentalness", "liveness", "valence", "tempo", "mode"
 )
 
+# Run the recommendation function
 recommended_songs_cluster <- recommend_songs_cluster(spotify_songs, users_top_50, feature_names)
+
+# Convert the list of recommended songs to a data frame
 top_song_recomendation <- do.call(rbind, lapply(recommended_songs_cluster, function(x) data.frame(t(sapply(x, unlist)), stringsAsFactors = FALSE)))
+
 # select the first 10 songs
 top_10_song_recomendation <- top_song_recomendation[1:10, ]
+
 # print track_name and track_artist and track genre
 print(top_10_song_recomendation[, c("track_name", "track_artist", "playlist_genre", "cluster")])
+
+```
