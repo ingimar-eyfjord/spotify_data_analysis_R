@@ -2,7 +2,7 @@
 
 > A data-driven review of Spotify's audio features and their use case for genre classification and recommender systems.
 
-This repo is the code for an exam paper I wrote during my Master's Degree in Information Science. The paper is available on Medium [here]()
+This repo is the code for an exam paper I wrote during my Master's Degree in Information Science. The paper is available on Medium [here](https://medium.com/@ingimareys93/the-melodies-of-metrics-7b3cd24639d9)
 
 ## Code documentation
 
